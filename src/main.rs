@@ -74,12 +74,6 @@ fn main() {
         }
     }
 
-    // fn router(routes: Route[], url: String) {
-    //  if routes.route matches url {
-    //      route.handler();
-    //  }
-    // }
-
     fn declare_and_execute_server(resource: &str, headers: Vec<String>, stream: TcpStream) {
         // do both sides of the abstraction layer here
         // 1. declare the server - declare routes, handlers etc
@@ -95,9 +89,8 @@ fn main() {
 
         fn get_header_value(headers: Vec<String>, header_name: &str) -> String {
             let header_string = headers.iter().find(|header| header.contains(&header_name)).unwrap();
-            let value_start = header_string.find(&header_name).unwrap() + header_name.len();
-            let value_end = header_string.find("\r\n").unwrap();
-            let body = &header_string[value_start..value_end];
+            let value_start = header_string.find(&header_name).unwrap() + header_name.len() + ": ".len();
+            let body = &header_string[value_start..];
 
             return body.to_string();
         }
@@ -127,6 +120,7 @@ fn main() {
 
             let body = get_header_value(req.headers, "User-Agent");
             let response = format_response_with_body(&body);
+            println!("RESPONSE: {}", response);
             let _ = stream.write_all(response.as_bytes());
         }
 
@@ -151,8 +145,8 @@ fn main() {
         };
 
         let user_agent = Route {
-            path: "/user_agent".to_string(),
-            matcher: "/user_agent".to_string(),
+            path: "/user-agent".to_string(),
+            matcher: "/user-agent".to_string(),
             handler: user_agent_handler,
         };
 
