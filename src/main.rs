@@ -97,7 +97,7 @@ fn main() {
 
         fn get_query(resource: &str, matcher: &str) -> String {
             if let Some(match_start) = resource.find(matcher) {
-                let query_start = match_start + matcher.len();
+                let query_start = match_start + matcher.len() + "/".len();
                 return (&resource[query_start..]).to_string();
             }
                 
