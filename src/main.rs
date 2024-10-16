@@ -97,8 +97,14 @@ fn main() {
 
         fn get_query(resource: &str, matcher: &str) -> String {
             if let Some(match_start) = resource.find(matcher) {
-                let query_start = match_start + matcher.len() + "/".len();
-                return (&resource[query_start..]).to_string();
+                let match_end = match_start + matcher.len();
+                // Avoid buffer overflow
+                if match_end < resource.len() {
+                    let query_start = match_end + "/".len();
+                    return (&resource[query_start..]).to_string();
+                }
+
+                return "".to_string();
             }
                 
             return "".to_string()
@@ -168,7 +174,6 @@ fn main() {
 
         if let Some(route) = match_route {
             // TODO: Write request details parser
-            println!("MATCHED ROUTE, {}", route.path);
             let request = Request {
                 query: get_query(resource, &route.matcher),
                 headers: headers.clone(),
