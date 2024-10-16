@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Write, Read};
 #[allow(unused_imports)]
 use std::net::TcpListener;
 
@@ -11,7 +11,17 @@ fn main() {
     for stream in listener.incoming() {
         match stream {
             Ok(mut _stream) => {
-                _stream.write_all("HTTP/1.1 200 OK\r\n\r\n".as_bytes());
+                let mut request = String::new();
+                let _ = _stream.read_to_string(&mut request);
+                let path_start = request.find("GET /").unwrap() + "GET /".len();
+                let path_end = request.find(" HTTP").unwrap();
+                let resource = &request[path_start..path_end];
+
+                if resource == "" {
+                    let _ = _stream.write_all("HTTP/1.1 200 OK\r\n\r\n".as_bytes());
+                } else {
+                    let _ = _stream.write_all("HTTP/1.1 404 Not Found\r\n\r\n".as_bytes());
+                }
             }
             Err(e) => {
                 println!("error: {}", e);
