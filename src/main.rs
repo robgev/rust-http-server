@@ -11,8 +11,9 @@ fn main() {
     for stream in listener.incoming() {
         match stream {
             Ok(mut _stream) => {
-                let mut request = String::new();
-                let _ = _stream.read_to_string(&mut request);
+                let mut buf = [0; 512];
+                let _ = _stream.read(&mut buf);
+                let request = String::from_utf8(buf.to_vec()).unwrap();
                 let path_start = request.find("GET /").unwrap() + "GET /".len();
                 let path_end = request.find(" HTTP").unwrap();
                 let resource = &request[path_start..path_end];
