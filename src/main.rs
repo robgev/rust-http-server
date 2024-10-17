@@ -55,10 +55,18 @@ fn main() {
                 // <Headers>
                 // 1. Extract different parts
                 let pattern = "HTTP/1.1\r\n";
-                let headers_start = request.find(pattern).unwrap() + pattern.len();
-                let headers_end = headers_start + request[headers_start..].find("\r\n\r\n").unwrap();
-                let headers_text = &request[headers_start..headers_end];
-                let headers: Vec<String> = headers_text.split("\r\n").map(|x| x.to_string()).collect();
+                let mut headers_pointer = request.find(pattern).unwrap() + pattern.len();
+                let mut headers: Vec<String> = Vec::new();
+                while let Some(header_length) = &request[headers_pointer..].find("\r\n") {
+                    let header_end = headers_pointer + *header_length;
+                    let header = &request[headers_pointer..header_end];
+                    if header == "" {
+                        break;
+                    }
+
+                    headers.push(header.to_string());
+                    headers_pointer = header_end + "\r\n".len();
+                }
 
                 // 2. How to serve different parts
                 // 3. Router - Matched - give req, res header
