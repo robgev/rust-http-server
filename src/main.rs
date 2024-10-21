@@ -3,8 +3,7 @@
 // i.e. something like Node + Express
 // P.S. I am learning Rust through doing this so bear with me :D
 
-use std::{io::{Write, Read}, net::TcpStream};
-#[allow(unused_imports)]
+use std::{io::{Write, Read}, net::TcpStream, thread};
 use std::net::TcpListener;
 
 struct Request {
@@ -38,48 +37,58 @@ impl Router {
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
+    let mut handles = vec![];
 
     for stream in listener.incoming() {
-        match stream {
-            Ok(mut _stream) => {
-                // Chop and extract <parts> separately
+        let handle = thread::spawn(move || {
+            match stream {
+                Ok(mut _stream) => {
+                    // Chop and extract <parts> separately
 
-                // <URL Extractor>
-                let mut buf = [0; 512];
-                let _ = _stream.read(&mut buf);
-                let request = String::from_utf8(buf.to_vec()).unwrap();
-                let path_start = request.find("GET ").unwrap() + "GET ".len();
-                let path_end = request.find(" HTTP").unwrap();
-                let resource = &request[path_start..path_end];
+                    // <URL Extractor>
+                    let mut buf = [0; 512];
+                    let _ = _stream.read(&mut buf);
+                    let request = String::from_utf8(buf.to_vec()).unwrap();
+                    let path_start = request.find("GET ").unwrap() + "GET ".len();
+                    let path_end = request.find(" HTTP").unwrap();
+                    let resource = &request[path_start..path_end];
 
-                // <Headers>
-                // 1. Extract different parts
-                let pattern = "HTTP/1.1\r\n";
-                let mut headers_pointer = request.find(pattern).unwrap() + pattern.len();
-                let mut headers: Vec<String> = Vec::new();
-                while let Some(header_length) = &request[headers_pointer..].find("\r\n") {
-                    let header_end = headers_pointer + *header_length;
-                    let header = &request[headers_pointer..header_end];
-                    if header == "" {
-                        break;
+                    // <Headers>
+                    // 1. Extract different parts
+                    let pattern = "HTTP/1.1\r\n";
+                    let mut headers_pointer = request.find(pattern).unwrap() + pattern.len();
+                    let mut headers: Vec<String> = Vec::new();
+                    while let Some(header_length) = &request[headers_pointer..].find("\r\n") {
+                        let header_end = headers_pointer + *header_length;
+                        let header = &request[headers_pointer..header_end];
+                        if header == "" {
+                            break;
+                        }
+
+                        headers.push(header.to_string());
+                        headers_pointer = header_end + "\r\n".len();
                     }
 
-                    headers.push(header.to_string());
-                    headers_pointer = header_end + "\r\n".len();
+                    // 2. How to serve different parts
+                    // 3. Router - Matched - give req, res header
+
+
+                    // <Server> = <Resource URL> -> <Server Response>
+                    // too abstract but will do for now
+                    declare_and_execute_server(resource, headers, _stream);
                 }
-
-                // 2. How to serve different parts
-                // 3. Router - Matched - give req, res header
-
-
-                // <Server> = <Resource URL> -> <Server Response>
-                // too abstract but will do for now
-                declare_and_execute_server(resource, headers, _stream);
+                Err(e) => {
+                    println!("error: {}", e);
+                }
             }
-            Err(e) => {
-                println!("error: {}", e);
-            }
-        }
+
+        });
+
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
     }
 
     fn declare_and_execute_server(resource: &str, headers: Vec<String>, stream: TcpStream) {
@@ -134,7 +143,6 @@ fn main() {
 
             let body = get_header_value(req.headers, "User-Agent");
             let response = format_response_with_body(&body);
-            println!("RESPONSE: {}", response);
             let _ = stream.write_all(response.as_bytes());
         }
 
