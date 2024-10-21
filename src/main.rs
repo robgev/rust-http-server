@@ -140,10 +140,16 @@ fn main() {
         }
 
         fn get_env(args: Vec<String>) -> Env {
-            let dirname = args[2].clone();
+            if args.len() > 1 {
+                let dirname = args[2].clone();
+
+                return Env {
+                    dirname
+                }
+            }
 
             return Env {
-                dirname
+                dirname: "".to_string()
             }
         }
 
