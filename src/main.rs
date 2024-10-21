@@ -3,11 +3,16 @@
 // i.e. something like Node + Express
 // P.S. I am learning Rust through doing this so bear with me :D
 
-use std::{io::{Write, Read}, net::TcpStream, thread};
+use std::{io::{Write, Read}, net::TcpStream, thread, env, fs};
 use std::net::TcpListener;
+
+struct Env {
+    dirname: String,
+}
 
 struct Request {
     query: String,
+    env: Env,
     headers: Vec<String>,
 }
 
@@ -41,6 +46,7 @@ fn main() {
 
     for stream in listener.incoming() {
         let handle = thread::spawn(move || {
+            let args: Vec<String> = env::args().collect();
             match stream {
                 Ok(mut _stream) => {
                     // Chop and extract <parts> separately
@@ -75,7 +81,7 @@ fn main() {
 
                     // <Server> = <Resource URL> -> <Server Response>
                     // too abstract but will do for now
-                    declare_and_execute_server(resource, headers, _stream);
+                    declare_and_execute_server(resource, args, headers, _stream);
                 }
                 Err(e) => {
                     println!("error: {}", e);
@@ -91,7 +97,7 @@ fn main() {
         handle.join().unwrap();
     }
 
-    fn declare_and_execute_server(resource: &str, headers: Vec<String>, stream: TcpStream) {
+    fn declare_and_execute_server(resource: &str, args: Vec<String>, headers: Vec<String>, stream: TcpStream) {
         // do both sides of the abstraction layer here
         // 1. declare the server - declare routes, handlers etc
         let mut routes = Vec::<Route>::new();
@@ -100,6 +106,12 @@ fn main() {
         // fn format_response(status, headers, body) -> ()
         fn format_response_with_body(body: &str) -> String {
             let response = format!("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+
+            return response;
+        }
+
+        fn format_file_response(body: String) -> String {
+            let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
 
             return response;
         }
@@ -127,6 +139,14 @@ fn main() {
             return "".to_string()
         }
 
+        fn get_env(args: Vec<String>) -> Env {
+            let dirname = args[2].clone();
+
+            return Env {
+                dirname
+            }
+        }
+
         // TODO: Add interface functionality to allow optional arguments
         fn handle_root(mut stream: TcpStream, _: Request) {
             let _ = stream.write_all("HTTP/1.1 200 OK\r\n\r\n".as_bytes());
@@ -136,6 +156,23 @@ fn main() {
             // Echo query back
             let response = format_response_with_body(&req.query);
             let _ = stream.write_all(response.as_bytes());
+        }
+
+        fn handle_files(mut stream: TcpStream, req: Request) {
+            let Env { dirname } = req.env;
+            let file_name = req.query;
+            let file_path = format!("{}{}", dirname, file_name);
+            let contents = fs::read_to_string(file_path);
+
+            match contents {
+                Ok(content) => {
+                    let response = format_file_response(content);
+                    let _ = stream.write_all(response.as_bytes());
+                }
+                Err(_) => {
+                    handle_404(stream.try_clone().unwrap(), "");
+                }
+            }
         }
 
         fn handle_user_agent(mut stream: TcpStream, req: Request) {
@@ -153,6 +190,7 @@ fn main() {
         let root_handler: RequestHandler = handle_root;
         let echo_handler: RequestHandler = handle_echo;
         let user_agent_handler: RequestHandler = handle_user_agent;
+        let files_handler: RequestHandler = handle_files;
 
         let root = Route {
             path: "/".to_string(),
@@ -166,12 +204,19 @@ fn main() {
             handler: echo_handler,
         };
 
+        let files = Route {
+            path: "/files/{query}".to_string(),
+            matcher: "/files".to_string(),
+            handler: files_handler,
+        };
+
         let user_agent = Route {
             path: "/user-agent".to_string(),
             matcher: "/user-agent".to_string(),
             handler: user_agent_handler,
         };
 
+        routes.push(files);
         routes.push(echo);
         routes.push(user_agent);
         routes.push(root);
@@ -193,6 +238,7 @@ fn main() {
             let request = Request {
                 query: get_query(resource, &route.matcher),
                 headers: headers.clone(),
+                env: get_env(args),
             };
             // TODO: Try to fix this magic
             (route.handler)(stream.try_clone().unwrap(), request);
