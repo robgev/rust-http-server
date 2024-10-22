@@ -3,7 +3,7 @@
 // i.e. something like Node + Express
 // P.S. I am learning Rust through doing this so bear with me :D
 
-use std::{io::{Write, Read}, net::TcpStream, thread, env, fs};
+use std::{io::{Write, Read}, net::TcpStream, thread, env, fs::{self, File}, usize};
 use std::net::TcpListener;
 
 struct Env {
@@ -14,12 +14,16 @@ struct Request {
     query: String,
     env: Env,
     headers: Vec<String>,
+    body: String,
 }
 
 type RequestHandler = fn(stream: TcpStream, req: Request);
 
+
+// TODO: Create methods enum and use that instead
 struct Route {
     path: String,
+    method: String,
     handler: RequestHandler,
     matcher: String,
 }
@@ -29,9 +33,10 @@ struct Router {
 }
 
 impl Router {
-    pub fn create_route(&mut self, path: String, matcher: String, handler: RequestHandler) {
+    pub fn create_route(&mut self, path: String, matcher: String, method: String, handler: RequestHandler) {
         let route = Route {
             path,
+            method,
             handler,
             matcher,
         };
@@ -55,9 +60,11 @@ fn main() {
                     let mut buf = [0; 512];
                     let _ = _stream.read(&mut buf);
                     let request = String::from_utf8(buf.to_vec()).unwrap();
-                    let path_start = request.find("GET ").unwrap() + "GET ".len();
                     let path_end = request.find(" HTTP").unwrap();
-                    let resource = &request[path_start..path_end];
+                    let resource = &request[0..path_end];
+                    let verb_and_uri: Vec<&str> = resource.split(" ").collect();
+                    let verb = verb_and_uri[0];
+                    let uri = verb_and_uri[1];
 
                     // <Headers>
                     // 1. Extract different parts
@@ -75,13 +82,17 @@ fn main() {
                         headers_pointer = header_end + "\r\n".len();
                     }
 
+                    let body_start = headers_pointer + "\r\n".len();
+                    let body_end = request.len() - 1;
+                    let body = &request[body_start..body_end];
+
                     // 2. How to serve different parts
                     // 3. Router - Matched - give req, res header
 
 
                     // <Server> = <Resource URL> -> <Server Response>
                     // too abstract but will do for now
-                    declare_and_execute_server(resource, args, headers, _stream);
+                    declare_and_execute_server(verb, uri, args, headers, body, _stream);
                 }
                 Err(e) => {
                     println!("error: {}", e);
@@ -97,7 +108,9 @@ fn main() {
         handle.join().unwrap();
     }
 
-    fn declare_and_execute_server(resource: &str, args: Vec<String>, headers: Vec<String>, stream: TcpStream) {
+    // Change matcher to respect verb 
+    // Update path declarations accordingly
+    fn declare_and_execute_server(verb: &str, resource: &str, args: Vec<String>, headers: Vec<String>, body: &str, stream: TcpStream) {
         // do both sides of the abstraction layer here
         // 1. declare the server - declare routes, handlers etc
         let mut routes = Vec::<Route>::new();
@@ -181,6 +194,26 @@ fn main() {
             }
         }
 
+        fn handle_post_files(mut stream: TcpStream, req: Request) {
+            let Env { dirname } = req.env;
+            let file_name = req.query;
+            let file_path = format!("{}{}", dirname, file_name);
+            let file = File::create(file_path);
+            let content_length: usize = get_header_value(req.headers, "Content-Length").parse().unwrap();
+            let content = &req.body[0..content_length];
+
+            match file {
+                Ok(mut file) => {
+                    file.write_all(content.as_bytes()).expect("Error writing to the file");
+                    let _ = stream.write_all("HTTP/1.1 201 Created\r\n\r\n".as_bytes());
+                }
+                Err(_) => {
+                    let _ = stream.write_all("HTTP/1.1 500 Internal Server Error\r\n\r\n".as_bytes());
+                }
+            }
+
+        }
+
         fn handle_user_agent(mut stream: TcpStream, req: Request) {
             // TODO: Enhance and extract the header parser
 
@@ -197,32 +230,45 @@ fn main() {
         let echo_handler: RequestHandler = handle_echo;
         let user_agent_handler: RequestHandler = handle_user_agent;
         let files_handler: RequestHandler = handle_files;
+        let files_post_handler: RequestHandler = handle_post_files;
 
         let root = Route {
             path: "/".to_string(),
+            method: "GET".to_string(),
             matcher: "/".to_string(),
             handler: root_handler,
         };
 
         let echo = Route {
             path: "/echo/{query}".to_string(),
+            method: "GET".to_string(),
             matcher: "/echo".to_string(),
             handler: echo_handler,
         };
 
         let files = Route {
             path: "/files/{query}".to_string(),
+            method: "GET".to_string(),
             matcher: "/files".to_string(),
             handler: files_handler,
         };
 
+        let files_post = Route {
+            path: "/files/{query}".to_string(),
+            method: "POST".to_string(),
+            matcher: "/files".to_string(),
+            handler: files_post_handler,
+        };
+
         let user_agent = Route {
             path: "/user-agent".to_string(),
+            method: "GET".to_string(),
             matcher: "/user-agent".to_string(),
             handler: user_agent_handler,
         };
 
         routes.push(files);
+        routes.push(files_post);
         routes.push(echo);
         routes.push(user_agent);
         routes.push(root);
@@ -233,10 +279,10 @@ fn main() {
         // TODO: Extract the <Parser> from the <Router>
         let match_route = routes.iter().find(|route| {
             if resource == "/" {
-                return route.matcher == "/";
+                return route.matcher == "/" && route.method == verb.to_string();
             }
 
-            return route.matcher != "/" && resource.contains(&route.matcher);
+            return route.matcher != "/" && resource.contains(&route.matcher) && route.method == verb.to_string();
         });
 
         if let Some(route) = match_route {
@@ -244,6 +290,7 @@ fn main() {
             let request = Request {
                 query: get_query(resource, &route.matcher),
                 headers: headers.clone(),
+                body: body.to_string(),
                 env: get_env(args),
             };
             // TODO: Try to fix this magic
